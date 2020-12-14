@@ -129,7 +129,7 @@ class AdjacentAttentionNetwork(nn.Module):
         device = x.device
 
         diag = torch.eye(adjacency_mat.shape[-1], device = device).bool()
-        adjacency_mat &= diag # nodes should pay attention itself (self-interacting)
+        adjacency_mat |= diag # nodes should pay attention itself (self-interacting)
 
         # zero out points on adjacency matrix
         # where the nodes are just padding
