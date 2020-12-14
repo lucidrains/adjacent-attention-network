@@ -10,9 +10,6 @@ from isab_pytorch import ISAB
 def exists(val):
     return val is not None
 
-def default(val, d):
-    return val if exists(val) else d
-
 def batched_index_select(values, indices):
     last_dim = values.shape[-1]
     return values.gather(1, indices[:, :, None].expand(-1, -1, last_dim))
@@ -35,11 +32,12 @@ class PreNorm(nn.Module):
         return self.fn(self.norm(x), **kwargs)
 
 class FeedForward(nn.Module):
-    def __init__(self, dim, mult = 4):
+    def __init__(self, dim, mult = 4, dropout = 0.):
         super().__init__()
         self.net = nn.Sequential(
             nn.Linear(dim, dim * mult),
             nn.GELU(),
+            nn.Dropout(dropout),
             nn.Linear(dim * mult, dim)
         )
 
@@ -54,7 +52,8 @@ class AdjacentAttention(nn.Module):
         *,
         dim,
         dim_head = 64,
-        heads = 4
+        heads = 4,
+        dropout = 0.
     ):
         super().__init__()
         inner_dim = dim_head * heads
@@ -67,6 +66,8 @@ class AdjacentAttention(nn.Module):
 
         self.null_k = nn.Parameter(torch.randn(heads, dim_head))
         self.null_v = nn.Parameter(torch.randn(heads, dim_head))
+
+        self.dropout = nn.Dropout(dropout)
 
     def forward(
         self,
@@ -104,6 +105,9 @@ class AdjacentAttention(nn.Module):
         # attention
         attn = sim.softmax(dim = -1)
 
+        # dropout
+        attn = self.dropout(attn)
+
         # get weighted average of the values of all neighbors
         out = einsum('b h n a, b h n a d -> b h n d', attn, v)
         out = rearrange(out, 'b h n d -> b n (h d)')
@@ -122,7 +126,9 @@ class AdjacentAttentionNetwork(nn.Module):
         dim_head = 64,
         heads = 4,
         num_neighbors_cutoff = None,
-        num_global_nodes = 0
+        num_global_nodes = 0,
+        attn_dropout = 0.,
+        ff_dropout = 0.
     ):
         super().__init__()
         self.num_neighbors_cutoff = num_neighbors_cutoff
@@ -139,11 +145,13 @@ class AdjacentAttentionNetwork(nn.Module):
                 Residual(PreNorm(dim, AdjacentAttention(
                     dim = dim,
                     dim_head = dim_head,
-                    heads = heads
+                    heads = heads,
+                    dropout = attn_dropout
                 ))),
                 global_attn,
                 Residual(PreNorm(dim, FeedForward(
-                    dim = dim
+                    dim = dim,
+                    dropout = ff_dropout
                 )))
             ]))
 
