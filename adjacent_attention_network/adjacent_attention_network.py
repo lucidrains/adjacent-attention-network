@@ -21,7 +21,6 @@ class Residual(nn.Module):
     def __init__(self, fn):
         super().__init__()
         self.fn = fn
-
     def forward(self, x, **kwargs):
         return self.fn(x, **kwargs) + x
 
@@ -32,6 +31,18 @@ class PreNorm(nn.Module):
         self.norm = nn.LayerNorm(dim)
     def forward(self, x, **kwargs):
         return self.fn(self.norm(x), **kwargs)
+
+class FeedForward(nn.Module):
+    def __init__(self, dim, mult = 4):
+        super().__init__()
+        self.net = nn.Sequential(
+            nn.Linear(dim, dim * mult),
+            nn.GELU(),
+            nn.Linear(dim * mult, dim)
+        )
+
+    def forward(self, x, **kwargs):
+        return self.net(x)
 
 # adjacent attention class
 
@@ -103,12 +114,16 @@ class AdjacentAttentionNetwork(nn.Module):
         self.layers = nn.ModuleList([])
 
         for _ in range(depth):
-            layer = Residual(PreNorm(dim, AdjacentAttention(
-                dim = dim,
-                dim_head = dim_head,
-                heads = heads
-            )))
-            self.layers.append(layer)
+            self.layers.append(nn.ModuleList([
+                Residual(PreNorm(dim, AdjacentAttention(
+                    dim = dim,
+                    dim_head = dim_head,
+                    heads = heads
+                ))),
+                Residual(PreNorm(dim, FeedForward(
+                    dim = dim
+                )))
+            ]))
 
     def forward(self, x, adjacency_mat, mask = None):
         device = x.device
@@ -132,11 +147,13 @@ class AdjacentAttentionNetwork(nn.Module):
         # also pass the mask into the attention, as some neighbors will be just padding and not actually neighbors
         mask, adj_kv_indices = adj_mat.topk(dim = -1, k = max_neighbors)
 
-        for layer in self.layers:
-            x = layer(
+        for attn, ff in self.layers:
+            x = attn(
                 x,
                 adj_kv_indices = adj_kv_indices,
                 mask = mask
             )
+
+            x = ff(x)
 
         return x
