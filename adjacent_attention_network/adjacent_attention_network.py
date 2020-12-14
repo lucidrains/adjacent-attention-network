@@ -63,18 +63,18 @@ class AdjacentAttention(nn.Module):
         k, v = map(lambda t: rearrange(t, 'b n a (h d) -> b h n a d',  h = h), (k, v))
 
         # similarity of each node to its neighbors
-        dots = einsum('b h i d, b h i j d -> b h i j', q, k) * self.scale
+        dots = einsum('b h n d, b h n a d -> b h n a', q, k) * self.scale
 
         # mask out neighbors that are just padding
         mask_value = -torch.finfo(dots.dtype).max
-        mask = rearrange(mask.bool(), 'b i j -> b () i j')
+        mask = rearrange(mask.bool(), 'b n a -> b () n a')
         dots.masked_fill_(~mask.bool(), mask_value)
 
         # attention
         attn = dots.softmax(dim = -1)
 
         # get weighted average of the values of all neighbors
-        out = einsum('b h i j, b h i j d -> b h i d', attn, v)
+        out = einsum('b h n a, b h n a d -> b h n d', attn, v)
         out = rearrange(out, 'b h n d -> b n (h d)')
 
         # combine output
