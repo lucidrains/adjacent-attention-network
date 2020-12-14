@@ -18,6 +18,7 @@ setup(
   install_requires=[
     'einops>=0.3',
     'torch>=1.6',
+    'isab-pytorch'
   ],
   classifiers=[
     'Development Status :: 4 - Beta',

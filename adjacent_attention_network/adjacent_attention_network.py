@@ -1,7 +1,9 @@
 import torch
 import torch.nn.functional as F
 from torch import nn, einsum
+
 from einops import rearrange
+from isab_pytorch import ISAB
 
 # helpers
 
@@ -120,18 +122,26 @@ class AdjacentAttentionNetwork(nn.Module):
         dim_head = 64,
         heads = 4,
         num_neighbors_cutoff = None,
+        num_global_nodes = 0
     ):
         super().__init__()
         self.num_neighbors_cutoff = num_neighbors_cutoff
         self.layers = nn.ModuleList([])
 
         for _ in range(depth):
+            global_attn = PreNorm(dim, ISAB(
+                dim = dim,
+                heads = heads,
+                num_induced_points = num_global_nodes
+            )) if num_global_nodes > 0 else None
+
             self.layers.append(nn.ModuleList([
                 Residual(PreNorm(dim, AdjacentAttention(
                     dim = dim,
                     dim_head = dim_head,
                     heads = heads
                 ))),
+                global_attn,
                 Residual(PreNorm(dim, FeedForward(
                     dim = dim
                 )))
@@ -178,12 +188,16 @@ class AdjacentAttentionNetwork(nn.Module):
             mask, adj_kv_indices = adj_mat.topk(dim = -1, k = max_neighbors)
 
 
-        for attn, ff in self.layers:
+        for attn, global_attn, ff in self.layers:
             x = attn(
                 x,
                 adj_kv_indices = adj_kv_indices,
                 mask = mask
             )
+
+            if exists(global_attn):
+                out, _ = global_attn(x)
+                x = x + out
 
             x = ff(x)
 
