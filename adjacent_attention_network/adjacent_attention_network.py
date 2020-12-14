@@ -15,6 +15,16 @@ def batched_index_select(values, indices):
     last_dim = values.shape[-1]
     return values.gather(1, indices[:, :, None].expand(-1, -1, last_dim))
 
+# helper classes
+
+class PreNorm(nn.Module):
+    def __init__(self, dim, fn):
+        super().__init__()
+        self.fn = fn
+        self.norm = nn.LayerNorm(dim)
+    def forward(self, x, **kwargs):
+        return self.fn(self.norm(x), **kwargs)
+
 # adjacent attention class
 
 class AdjacentAttention(nn.Module):
@@ -85,11 +95,11 @@ class AdjacentAttentionNetwork(nn.Module):
         self.layers = nn.ModuleList([])
 
         for _ in range(depth):
-            layer = AdjacentAttention(
+            layer = PreNorm(dim, AdjacentAttention(
                 dim = dim,
                 dim_head = dim_head,
                 heads = heads
-            )
+            ))
             self.layers.append(layer)
 
     def forward(self, x, adjacency_mat):
@@ -106,7 +116,7 @@ class AdjacentAttentionNetwork(nn.Module):
         for layer in self.layers:
             attn_out = layer(
                 x,
-                adj_kv_indices,
+                adj_kv_indices = adj_kv_indices,
                 mask = mask
             )
             x =  attn_out + x
