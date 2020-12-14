@@ -2,7 +2,7 @@ import torch
 import torch.nn.functional as F
 from torch import nn, einsum
 
-from einops import rearrange
+from einops import rearrange, repeat
 from isab_pytorch import ISAB
 
 # helpers
@@ -60,8 +60,7 @@ class AdjacentAttention(nn.Module):
         self.scale = dim_head ** -0.5
         self.heads = heads
 
-        self.to_q = nn.Linear(dim, inner_dim, bias = False)
-        self.to_kv = nn.Linear(dim, inner_dim * 2, bias = False)
+        self.to_qkv = nn.Linear(dim, inner_dim * 3, bias = False)
         self.to_out = nn.Linear(inner_dim, dim)
 
         self.null_k = nn.Parameter(torch.randn(heads, dim_head))
@@ -76,16 +75,17 @@ class AdjacentAttention(nn.Module):
         mask
     ):
         b, n, d, h = *x.shape, self.heads
-        flat_indices = rearrange(adj_kv_indices, 'b n a -> b (n a)')
-
-        # select the neighbors for every individual token. "a" dimension stands for 'adjacent neighbor'
-        kv_x = batched_index_select(x, flat_indices)
-        kv_x = rearrange(kv_x, 'b (n a) d -> b n a d', n = n)
+        flat_indices = repeat(adj_kv_indices, 'b n a -> (b h) (n a)', h = h)
 
         # derive query, key, value
-        q, k, v = self.to_q(x), *self.to_kv(kv_x).chunk(2, dim = -1)
-        q = rearrange(q, 'b n (h d) -> b h n d', h = h)
-        k, v = map(lambda t: rearrange(t, 'b n a (h d) -> b h n a d',  h = h), (k, v))
+        q, k, v = self.to_qkv(x).chunk(3, dim = -1)
+        q, k, v = map(lambda t: rearrange(t, 'b n (h d) -> b h n d', h = h), (q, k, v))
+
+        # gather keys and values according to adjacency matrix
+        k, v = map(lambda t: rearrange(t, 'b h n d -> (b h) n d'), (k, v))
+        k = batched_index_select(k, flat_indices)
+        v = batched_index_select(v, flat_indices)
+        k, v = map(lambda t: rearrange(t, '(b h) (n a) d -> b h n a d', h = h, n = n), (k, v))
 
         # add null key / value, so a node can attend to nothing
         # have come across this in GNN literature as some other name
