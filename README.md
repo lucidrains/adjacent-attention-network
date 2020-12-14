@@ -12,6 +12,10 @@ $ pip install adjacent-attention-network
 
 ## Usage
 
+Basically a transformers where each node pays attention to the neighbors as defined by the adjacency matrix. Complexity is O(n * max_neighbors). Max number of neighbors as defined by the adjacency matrix.
+
+The following example will have a complexity of ~ 1024 * 100
+
 ```python
 import torch
 from adjacent_attention_network import AdjacentAttentionNetwork
@@ -25,6 +29,29 @@ model = AdjacentAttentionNetwork(
 adj_mat = torch.empty(1, 1024, 1024).uniform_(0, 1) < 0.1
 nodes   = torch.randn(1, 1024, 512)
 mask    = torch.ones(1, 1024).bool()
+
+model(nodes, adj_mat, mask = mask) # (1, 1024, 512)
+```
+
+If the number of neighbors contain outliers, then the above will lead to wasteful computation, since a lot of nodes will be doing attention on padding. You can use the following stop-gap measure to account for these outliers.
+
+```python
+import torch
+from adjacent_attention_network import AdjacentAttentionNetwork
+
+model = AdjacentAttentionNetwork(
+    dim = 512,
+    depth = 6,
+    heads = 4,
+    num_neighbors_cutoff = 100
+).cuda()
+
+adj_mat = torch.empty(1, 1024, 1024).uniform_(0, 1).cuda() < 0.1
+nodes   = torch.randn(1, 1024, 512).cuda()
+mask    = torch.ones(1, 1024).bool().cuda()
+
+# for some reason, one of the nodes is fully connected to all others
+adj_mat[:, 0] = 1.
 
 model(nodes, adj_mat, mask = mask) # (1, 1024, 512)
 ```

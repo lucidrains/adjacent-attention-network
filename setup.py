@@ -3,7 +3,7 @@ from setuptools import setup, find_packages
 setup(
   name = 'adjacent-attention-pytorch',
   packages = find_packages(),
-  version = '0.0.6',
+  version = '0.0.7',
   license='MIT',
   description = 'Adjacent Attention Network - Pytorch',
   author = 'Phil Wang',

@@ -118,9 +118,11 @@ class AdjacentAttentionNetwork(nn.Module):
         dim,
         depth,
         dim_head = 64,
-        heads = 4
+        heads = 4,
+        num_neighbors_cutoff = None,
     ):
         super().__init__()
+        self.num_neighbors_cutoff = num_neighbors_cutoff
         self.layers = nn.ModuleList([])
 
         for _ in range(depth):
@@ -136,7 +138,7 @@ class AdjacentAttentionNetwork(nn.Module):
             ]))
 
     def forward(self, x, adjacency_mat, mask = None):
-        device = x.device
+        device, n = x.device, x.shape[1]
 
         diag = torch.eye(adjacency_mat.shape[-1], device = device).bool()
         adjacency_mat |= diag # nodes should pay attention itself (self-interacting)
@@ -149,13 +151,32 @@ class AdjacentAttentionNetwork(nn.Module):
 
         adj_mat = adjacency_mat.float()
 
+        # if we don't set a hard limit to the number of neighbors:
+        #   - get the maximum number of neighbors and pad the rest of the nodes with less than that number of neighbors
+        # else:
+        #   - randomly sample the cutoff number of neighbors for any node that exceeds the max
+        #   - this would be similar to random sparse attention (bigbird)
+
         # get the maximum number of neighbors
-        # todo - get distribution of number of neighbors, and strategically break up attention (message passing) to multiple steps
         max_neighbors = int(adj_mat.sum(dim = -1).max())
 
-        # use topk to get all the neighbors
-        # also pass the mask into the attention, as some neighbors will be just padding and not actually neighbors
-        mask, adj_kv_indices = adj_mat.topk(dim = -1, k = max_neighbors)
+        if exists(self.num_neighbors_cutoff) and max_neighbors > self.num_neighbors_cutoff:
+            # to randomly sample the neighbors, add a small uniform noise to the mask and topk
+            noise = torch.empty((n, n), device = device).uniform_(-0.01, 0.01)
+            adj_mat = adj_mat + noise
+
+            mask, adj_kv_indices = adj_mat.topk(dim = -1, k = self.num_neighbors_cutoff)
+
+            # cast the mask back to 0s and 1s
+            mask = (mask > 0.5).float()
+        else:
+            # todo - get distribution of number of neighbors, and strategically break up attention (message passing) to multiple steps
+            #      - start with a bimodal num neighbors test case, then generalize
+
+            # use topk to get all the neighbors
+            # also pass the mask into the attention, as some neighbors will be just padding and not actually neighbors
+            mask, adj_kv_indices = adj_mat.topk(dim = -1, k = max_neighbors)
+
 
         for attn, ff in self.layers:
             x = attn(
