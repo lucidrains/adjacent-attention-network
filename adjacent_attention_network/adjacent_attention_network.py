@@ -164,8 +164,7 @@ class AdjacentAttentionNetwork(nn.Module):
         # zero out points on adjacency matrix
         # where the nodes are just padding
         if exists(mask):
-            mask = mask[:, :, None] * mask[:, None, :]
-            adjacency_mat &= mask
+            adjacency_mat &= (mask[:, :, None] * mask[:, None, :])
 
         adj_mat = adjacency_mat.float()
 
@@ -183,28 +182,28 @@ class AdjacentAttentionNetwork(nn.Module):
             noise = torch.empty((n, n), device = device).uniform_(-0.01, 0.01)
             adj_mat = adj_mat + noise
 
-            mask, adj_kv_indices = adj_mat.topk(dim = -1, k = self.num_neighbors_cutoff)
+            adj_mask, adj_kv_indices = adj_mat.topk(dim = -1, k = self.num_neighbors_cutoff)
 
             # cast the mask back to 0s and 1s
-            mask = (mask > 0.5).float()
+            adj_mask = (adj_mask > 0.5).float()
         else:
             # todo - get distribution of number of neighbors, and strategically break up attention (message passing) to multiple steps
             #      - start with a bimodal num neighbors test case, then generalize
 
             # use topk to get all the neighbors
             # also pass the mask into the attention, as some neighbors will be just padding and not actually neighbors
-            mask, adj_kv_indices = adj_mat.topk(dim = -1, k = max_neighbors)
+            adj_mask, adj_kv_indices = adj_mat.topk(dim = -1, k = max_neighbors)
 
 
         for attn, global_attn, ff in self.layers:
             x = attn(
                 x,
                 adj_kv_indices = adj_kv_indices,
-                mask = mask
+                mask = adj_mask
             )
 
             if exists(global_attn):
-                out, _ = global_attn(x)
+                out, _ = global_attn(x, mask = mask)
                 x = x + out
 
             x = ff(x)
