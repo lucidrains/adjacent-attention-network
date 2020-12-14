@@ -24,6 +24,7 @@ model = AdjacentAttentionNetwork(
 
 adj_mat = torch.empty(1, 1024, 1024).uniform_(0, 1) < 0.1
 nodes   = torch.randn(1, 1024, 512)
+mask    = torch.ones(1, 1024).bool()
 
-model(nodes, adj_mat) # (1, 1024, 512)
+model(nodes, adj_mat, mask = mask) # (1, 1024, 512)
 ```

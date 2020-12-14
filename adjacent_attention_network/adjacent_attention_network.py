@@ -110,7 +110,18 @@ class AdjacentAttentionNetwork(nn.Module):
             )))
             self.layers.append(layer)
 
-    def forward(self, x, adjacency_mat):
+    def forward(self, x, adjacency_mat, mask = None):
+        device = x.device
+
+        diag = torch.eye(adjacency_mat.shape[-1], device = device).bool()
+        adjacency_mat &= diag # nodes should pay attention itself (self-interacting)
+
+        # zero out points on adjacency matrix
+        # where the nodes are just padding
+        if exists(mask):
+            mask = mask[:, :, None] * mask[:, None, :]
+            adjacency_mat &= mask
+
         adj_mat = adjacency_mat.float()
 
         # get the maximum number of neighbors
