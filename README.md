@@ -56,7 +56,7 @@ adj_mat[:, 0] = 1.
 model(nodes, adj_mat, mask = mask) # (1, 1024, 512)
 ```
 
-For non-local attention, I've decided to use a trick from the Set Transformers paper, the Induced Set Attention Block (ISAB). From the lens of graph neural net literature, this would be analogous as having global nodes for message passing non-locally.
+For non-local attention, I've decided to use a trick from the Set Transformers paper, the <a href="https://github.com/lucidrains/isab-pytorch">Induced Set Attention Block (ISAB)</a>. From the lens of graph neural net literature, this would be analogous as having global nodes for message passing non-locally.
 
 ```python
 import torch
@@ -66,17 +66,12 @@ model = AdjacentAttentionNetwork(
     dim = 512,
     depth = 6,
     heads = 4,
-    num_neighbors_cutoff = 100,
     num_global_nodes = 5
 ).cuda()
 
 adj_mat = torch.empty(1, 1024, 1024).uniform_(0, 1).cuda() < 0.1
 nodes   = torch.randn(1, 1024, 512).cuda()
 mask    = torch.ones(1, 1024).bool().cuda()
-
-# for some reason, one of the nodes is fully connected to all others
-# perhaps some instagram influencer
-adj_mat[:, 0] = 1.
 
 model(nodes, adj_mat, mask = mask) # (1, 1024, 512)
 ```
