@@ -63,6 +63,9 @@ class AdjacentAttention(nn.Module):
         self.to_kv = nn.Linear(dim, inner_dim * 2, bias = False)
         self.to_out = nn.Linear(inner_dim, dim)
 
+        self.null_k = nn.Parameter(torch.randn(heads, dim_head))
+        self.null_v = nn.Parameter(torch.randn(heads, dim_head))
+
     def forward(
         self,
         x,
@@ -81,16 +84,23 @@ class AdjacentAttention(nn.Module):
         q = rearrange(q, 'b n (h d) -> b h n d', h = h)
         k, v = map(lambda t: rearrange(t, 'b n a (h d) -> b h n a d',  h = h), (k, v))
 
+        # add null key / value, so a node can attend to nothing
+        # have come across this in GNN literature as some other name
+        nk, nv = map(lambda t: rearrange(t, 'h d -> () h () () d').expand(b, -1, n, 1, -1), (self.null_k, self.null_v))
+        k = torch.cat((nk, k), dim = -2)
+        v = torch.cat((nv, v), dim = -2)
+        mask = F.pad(mask, (1, 0), value = 1)
+
         # similarity of each node to its neighbors
-        dots = einsum('b h n d, b h n a d -> b h n a', q, k) * self.scale
+        sim = einsum('b h n d, b h n a d -> b h n a', q, k) * self.scale
 
         # mask out neighbors that are just padding
-        mask_value = -torch.finfo(dots.dtype).max
+        mask_value = -torch.finfo(sim.dtype).max
         mask = rearrange(mask.bool(), 'b n a -> b () n a')
-        dots.masked_fill_(~mask.bool(), mask_value)
+        sim.masked_fill_(~mask.bool(), mask_value)
 
         # attention
-        attn = dots.softmax(dim = -1)
+        attn = sim.softmax(dim = -1)
 
         # get weighted average of the values of all neighbors
         out = einsum('b h n a, b h n a d -> b h n d', attn, v)
